@@ -5,7 +5,7 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 // ===================================================================
-// TEXTOS DE CADA RESPUESTA (basados en el formato que ya usas)
+// TEXTOS DE CADA RESPUESTA
 // ===================================================================
 
 const TEXTOS = {
@@ -96,12 +96,11 @@ Aquí está nuestra carta completa con todos nuestros platillos.
 };
 
 // ===================================================================
-// FUNCIONES PARA ENVIAR MENSAJES
+// FUNCIONES PARA ENVIAR MENSAJES (con manejo de errores visible)
 // ===================================================================
 
-// Envía el menú principal como LISTA INTERACTIVA
 async function enviarMenuPrincipal(to) {
-  await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+  const response = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
@@ -115,7 +114,7 @@ async function enviarMenuPrincipal(to) {
         type: "list",
         header: {
           type: "text",
-          text: "Parque Temático Saqsayki ✨",
+          text: "Parque Saqsayki ✨",
         },
         body: {
           text: "¡Bienvenido(a)! Vive una experiencia única llena de aventura, diversión y naturaleza.\n\nSelecciona una opción:",
@@ -131,9 +130,9 @@ async function enviarMenuPrincipal(to) {
               rows: [
                 { id: "opcion_1", title: "1. Horarios e ingreso", description: "Horarios y precio de entrada" },
                 { id: "opcion_2", title: "2. Precios de juegos", description: "Precio unitario de cada juego" },
-                { id: "opcion_3", title: "3. Paquetes promocionales", description: "Combos y promociones" },
+                { id: "opcion_3", title: "3. Paquetes promo", description: "Combos y promociones" },
                 { id: "opcion_4", title: "4. Cómo llegar", description: "Ubicación y transporte" },
-                { id: "opcion_5", title: "5. Restaurante 🍽️", description: "Ver carta completa" },
+                { id: "opcion_5", title: "5. Restaurante", description: "Ver carta completa" },
               ],
             },
           ],
@@ -141,11 +140,16 @@ async function enviarMenuPrincipal(to) {
       },
     }),
   });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error("ERROR al enviar menú interactivo:", JSON.stringify(data));
+  }
+  return data;
 }
 
-// Envía un mensaje de texto simple
 async function enviarTexto(to, texto) {
-  await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+  const response = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
@@ -158,6 +162,12 @@ async function enviarTexto(to, texto) {
       text: { body: texto },
     }),
   });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error("ERROR al enviar texto:", JSON.stringify(data));
+  }
+  return data;
 }
 
 // ===================================================================
@@ -165,35 +175,29 @@ async function enviarTexto(to, texto) {
 // ===================================================================
 
 function interpretarMensaje(message) {
-  // Si el usuario TOCÓ una opción de la lista interactiva
   if (message.interactive?.type === "list_reply") {
-    return message.interactive.list_reply.id; // ej: "opcion_1"
+    return message.interactive.list_reply.id;
   }
 
-  // Si el usuario escribió TEXTO LIBRE (respaldo)
   const texto = message.text?.body?.toLowerCase().trim() || "";
 
-  // Saludos / palabra "menu" -> mostrar el menú principal
   const saludos = ["hola", "buenas", "buenos dias", "buenos días", "buenas tardes", "buenas noches", "menu", "menú", "inicio", "empezar"];
   if (saludos.some((s) => texto.includes(s))) {
     return "menu";
   }
 
-  // Coincidencia por número exacto (1, 2, 3, 4, 5)
   if (texto === "1") return "opcion_1";
   if (texto === "2") return "opcion_2";
   if (texto === "3") return "opcion_3";
   if (texto === "4") return "opcion_4";
   if (texto === "5") return "opcion_5";
 
-  // Coincidencia por palabras clave (respaldo adicional)
   if (texto.includes("horario") || texto.includes("ingreso")) return "opcion_1";
   if (texto.includes("precio") && texto.includes("juego")) return "opcion_2";
   if (texto.includes("paquete") || texto.includes("promo")) return "opcion_3";
   if (texto.includes("llegar") || texto.includes("ubicaci") || texto.includes("direcci")) return "opcion_4";
   if (texto.includes("restaurant") || texto.includes("carta") || texto.includes("comida")) return "opcion_5";
 
-  // Si no coincide con nada conocido
   return "no_reconocido";
 }
 
@@ -202,7 +206,6 @@ function interpretarMensaje(message) {
 // ===================================================================
 
 export default async function handler(req, res) {
-  // ===== VERIFICACIÓN DEL WEBHOOK (Meta manda un GET una sola vez) =====
   if (req.method === "GET") {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -215,7 +218,6 @@ export default async function handler(req, res) {
     return res.status(403).send("Verificación fallida");
   }
 
-  // ===== RECEPCIÓN DE MENSAJES (Meta manda un POST por cada mensaje) =====
   if (req.method === "POST") {
     try {
       const body = req.body;
@@ -249,8 +251,6 @@ export default async function handler(req, res) {
             await enviarTexto(from, TEXTOS.restaurante);
             break;
           default:
-            // CUALQUIER otro mensaje que no se reconozca -> responde
-            // con un mensaje amable y muestra el menú de nuevo
             await enviarTexto(
               from,
               "¡Hola! 👋 No entendí tu mensaje, pero aquí tienes nuestro menú de opciones:"
